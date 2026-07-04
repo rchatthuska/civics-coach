@@ -1815,7 +1815,7 @@ function AnswerInput({ mic, onSubmit, prompt }) {
 }
 
 /* ================= learn one question ================= */
-function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
+function LearnCard({ q, onMastered, mic }) {
   const [reps, setReps] = useState(0); // 0..3 successful repetitions
   const [phase, setPhase] = useState("repeat"); // repeat | answer | wrong | right
   const [feedback, setFeedback] = useState("");
@@ -1824,7 +1824,7 @@ function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
     s
       .replace(/\(.*?\)/g, " ")
       .replace(/\[.*?\]/g, " ")
-      .replace(/["“”]/g, "")
+      .replace(/["""]/g, "")
       .replace(/\s+/g, " ")
       .trim();
   const need = q.r || 1;
@@ -1886,23 +1886,6 @@ function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
           ))}
         </div>
       </div>
-      {(onPrev || onForward || answered) && (
-        <div className="nav-row">
-          {onPrev && (
-            <button className="ghost small" onClick={onPrev}>
-              ← Previous
-            </button>
-          )}
-          {answered && (
-            <span className="answered-badge">✓ Answered — you can retry</span>
-          )}
-          {onForward && (
-            <button className="ghost small fwd" onClick={onForward}>
-              Next unanswered →
-            </button>
-          )}
-        </div>
-      )}
       <VisualCard q={q} />
       <h2 className="q-text">{q.q}</h2>
       {phase === "repeat" && (
@@ -2005,31 +1988,46 @@ function AnswerList({ q }) {
 /* ================= quiz (unit quiz + midterm share this) ================= */
 function Quiz({ questions, title, mic, onFinish }) {
   const [idx, setIdx] = useState(0);
-  const [results, setResults] = useState([]);
-  const [reveal, setReveal] = useState(null); // {correct, said}
+  const [answers, setAnswers] = useState({}); // position → {correct, said}
+  const [showReview, setShowReview] = useState(false);
   const q = questions[idx];
+  const reveal = answers[idx] || null;
+  const answeredKeys = Object.keys(answers).map(Number).sort((a, b) => a - b);
+  const answeredCount = answeredKeys.length;
+  const maxAnswered = answeredCount > 0 ? Math.max(...answeredKeys) : -1;
+  const isAtFrontier = idx === maxAnswered;
 
   useEffect(() => {
     setIdx(0);
-    setResults([]);
-    setReveal(null);
+    setAnswers({});
+    setShowReview(false);
   }, [questions]);
+
   useEffect(() => {
-    if (q) speak(q.q);
+    if (q && !answers[idx]) speak(q.q); // only speak unanswered questions
   }, [idx, questions]);
 
   const submit = (text) => {
     const ok = matchAnswer(q, text);
-    setReveal({ correct: ok, said: text });
+    setAnswers((prev) => ({ ...prev, [idx]: { correct: ok, said: text } }));
     speak(ok ? "Correct." : "Incorrect.");
   };
+
   const next = () => {
-    const newResults = [...results, { q, correct: reveal.correct }];
-    setReveal(null);
     if (idx + 1 < questions.length) {
-      setResults(newResults);
       setIdx(idx + 1);
-    } else onFinish(newResults);
+    } else {
+      const results = questions.map((q, i) => ({
+        q,
+        correct: answers[i]?.correct ?? false,
+      }));
+      onFinish(results);
+    }
+  };
+
+  const goTo = (i) => {
+    setIdx(i);
+    setShowReview(false);
   };
 
   return (
@@ -2040,7 +2038,7 @@ function Quiz({ questions, title, mic, onFinish }) {
         </span>
         <div className="quiz-dots">
           {questions.map((_, i) => {
-            const r = results[i];
+            const r = answers[i];
             return (
               <span
                 key={i}
@@ -2053,10 +2051,61 @@ function Quiz({ questions, title, mic, onFinish }) {
           })}
         </div>
       </div>
+
+      {/* ── Answered Questions panel ── */}
+      {answeredCount > 0 && (
+        <button
+          className="ghost small review-toggle"
+          onClick={() => setShowReview((s) => !s)}
+        >
+          {showReview ? "▲ Hide" : "▼ Answered Questions"} ({answeredCount} of {questions.length})
+        </button>
+      )}
+      {showReview && (
+        <div className="review-panel">
+          {answeredKeys.map((i) => {
+            const ans = answers[i];
+            const qi = questions[i];
+            return (
+              <button
+                key={i}
+                className={
+                  "review-item" +
+                  (i === idx ? " active" : "") +
+                  (ans.correct ? " ok" : " bad")
+                }
+                onClick={() => goTo(i)}
+              >
+                <span className="review-mark">{ans.correct ? "✓" : "✗"}</span>
+                <span className="review-qnum">Q{qi.n}</span>
+                <span className="review-qtext">{qi.q}</span>
+                <span className="review-badge">Answered</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <h2 className="q-text">{q.q}</h2>
       <button className="ghost small" onClick={() => speak(q.q)}>
         🔊 Hear it again
       </button>
+      <div className="nav-row">
+        <button
+          className="ghost small"
+          disabled={idx === 0}
+          onClick={() => setIdx(idx - 1)}
+        >
+          ← Back
+        </button>
+        <button
+          className="ghost small"
+          disabled={idx + 1 > maxAnswered}
+          onClick={() => setIdx(idx + 1)}
+        >
+          Forward →
+        </button>
+      </div>
       {!reveal && (
         <AnswerInput
           mic={mic}
@@ -2069,11 +2118,13 @@ function Quiz({ questions, title, mic, onFinish }) {
           <div className="result-mark">
             {reveal.correct ? "✓ Correct" : "✗ Incorrect"}
           </div>
-          <div className="said">You said: “{reveal.said}”</div>
+          <div className="said">You said: "{reveal.said}"</div>
           <AnswerList q={q} />
-          <button className="primary" onClick={next}>
-            {idx + 1 < questions.length ? "Next question →" : "See results"}
-          </button>
+          {isAtFrontier && (
+            <button className="primary" onClick={next}>
+              {idx + 1 < questions.length ? "Next question →" : "See results"}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -2086,20 +2137,11 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
   const [stage, setStage] = useState("learn"); // learn | quiz | review | relearn
   const [list, setList] = useState(all); // current learning list
   const [pos, setPos] = useState(0);
-  const [maxPos, setMaxPos] = useState(0); // frontier: first not-yet-answered question
   const [lastResults, setLastResults] = useState(null);
 
   const mastered = () => {
-    if (pos === maxPos) {
-      // answered the frontier question
-      if (pos + 1 < list.length) {
-        setMaxPos(maxPos + 1);
-        setPos(pos + 1);
-      } else setStage("quiz");
-    } else {
-      // retried an already-answered one
-      setPos(pos + 1);
-    }
+    if (pos + 1 < list.length) setPos(pos + 1);
+    else setStage("quiz");
   };
   const quizDone = (results) => {
     const wrong = results.filter((r) => !r.correct).map((r) => r.q);
@@ -2109,7 +2151,6 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
     } else {
       setList(wrong);
       setPos(0);
-      setMaxPos(0);
       setStage("review");
     }
   };
@@ -2140,10 +2181,14 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
         <LearnCard
           q={list[pos]}
           mic={mic}
-          onPrev={pos > 0 ? () => setPos(pos - 1) : null}
-          answered={pos < maxPos}
-          onForward={pos < maxPos ? () => setPos(maxPos) : null}
-          onMastered={mastered}
+          onMastered={
+            stage === "learn"
+              ? mastered
+              : () => {
+                  if (pos + 1 < list.length) setPos(pos + 1);
+                  else setStage("quiz");
+                }
+          }
         />
       )}
 
@@ -2434,10 +2479,6 @@ function Style() {
   .q-text{font-family:Georgia,serif;font-size:21px;line-height:1.35;margin:4px 0 10px;color:#14264C}
   .step-label{font-size:14px;color:#3A4560;margin:14px 0 8px}
   .warn{color:#A33B2E;font-size:14px}
-  .nav-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-  .nav-row .ghost.small{margin-bottom:0}
-  .nav-row .fwd{margin-left:auto}
-  .answered-badge{font-size:12px;font-weight:700;color:#2E7D4F;background:#F1F8F3;border:1px solid #2E7D4F;border-radius:99px;padding:5px 12px}
   .mic-btn{width:100%;padding:16px;border-radius:12px;border:none;background:#14264C;color:#fff;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;font-family:inherit}
   .mic-btn.live{background:#A33B2E;animation:pulse 1.4s infinite}
   .mic-btn:disabled{background:#9AA3B5;cursor:not-allowed}
@@ -2479,6 +2520,22 @@ function Style() {
   .btn-row{display:flex;gap:10px}
   .btn-row .ghost{margin-top:12px;flex:1}
   .btn-row .primary{flex:1}
+  .review-toggle{width:100%;margin-bottom:8px;text-align:left;font-weight:600;color:#14264C}
+  .review-panel{background:#F8F9FC;border:1px solid #D8DEE9;border-radius:10px;padding:8px;margin-bottom:12px;max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+  .review-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid #E2E7F0;background:#fff;cursor:pointer;font:inherit;text-align:left;width:100%;transition:background .1s}
+  .review-item:hover{background:#EDF0F6}
+  .review-item.active{border-color:#14264C;background:#EDF0F6}
+  .review-item.ok{border-left:4px solid #2E7D4F}
+  .review-item.bad{border-left:4px solid #A33B2E}
+  .review-mark{font-weight:700;font-size:15px;min-width:18px}
+  .review-item.ok .review-mark{color:#2E7D4F}
+  .review-item.bad .review-mark{color:#A33B2E}
+  .review-qnum{font-size:12px;color:#8A5A00;font-weight:700;min-width:34px}
+  .review-qtext{flex:1;font-size:13px;color:#182236;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .review-badge{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#5B6478;background:#E8EBF2;padding:2px 7px;border-radius:99px;white-space:nowrap}
+  .nav-row{display:flex;gap:8px;margin:8px 0 4px}
+  .nav-row .ghost{flex:1}
+  .nav-row .ghost:disabled{opacity:.35;cursor:not-allowed}
   .footnote{font-size:12px;color:#5B6478;text-align:center;margin-top:18px;line-height:1.5}
 `}</style>
   );
