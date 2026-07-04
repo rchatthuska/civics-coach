@@ -1824,7 +1824,7 @@ function LearnCard({ q, onMastered, mic }) {
     s
       .replace(/\(.*?\)/g, " ")
       .replace(/\[.*?\]/g, " ")
-      .replace(/["“”]/g, "")
+      .replace(/["""]/g, "")
       .replace(/\s+/g, " ")
       .trim();
   const need = q.r || 1;
@@ -1988,31 +1988,40 @@ function AnswerList({ q }) {
 /* ================= quiz (unit quiz + midterm share this) ================= */
 function Quiz({ questions, title, mic, onFinish }) {
   const [idx, setIdx] = useState(0);
-  const [results, setResults] = useState([]);
-  const [reveal, setReveal] = useState(null); // {correct, said}
+  const [answers, setAnswers] = useState({}); // position → {correct, said}
   const q = questions[idx];
+  const reveal = answers[idx] || null;
+  const maxAnswered =
+    Object.keys(answers).length > 0
+      ? Math.max(...Object.keys(answers).map(Number))
+      : -1;
+  const isAtFrontier = idx === maxAnswered;
 
   useEffect(() => {
     setIdx(0);
-    setResults([]);
-    setReveal(null);
+    setAnswers({});
   }, [questions]);
+
   useEffect(() => {
-    if (q) speak(q.q);
+    if (q && !answers[idx]) speak(q.q); // only speak unanswered questions
   }, [idx, questions]);
 
   const submit = (text) => {
     const ok = matchAnswer(q, text);
-    setReveal({ correct: ok, said: text });
+    setAnswers((prev) => ({ ...prev, [idx]: { correct: ok, said: text } }));
     speak(ok ? "Correct." : "Incorrect.");
   };
+
   const next = () => {
-    const newResults = [...results, { q, correct: reveal.correct }];
-    setReveal(null);
     if (idx + 1 < questions.length) {
-      setResults(newResults);
       setIdx(idx + 1);
-    } else onFinish(newResults);
+    } else {
+      const results = questions.map((q, i) => ({
+        q,
+        correct: answers[i]?.correct ?? false,
+      }));
+      onFinish(results);
+    }
   };
 
   return (
@@ -2023,7 +2032,7 @@ function Quiz({ questions, title, mic, onFinish }) {
         </span>
         <div className="quiz-dots">
           {questions.map((_, i) => {
-            const r = results[i];
+            const r = answers[i];
             return (
               <span
                 key={i}
@@ -2040,6 +2049,22 @@ function Quiz({ questions, title, mic, onFinish }) {
       <button className="ghost small" onClick={() => speak(q.q)}>
         🔊 Hear it again
       </button>
+      <div className="nav-row">
+        <button
+          className="ghost small"
+          disabled={idx === 0}
+          onClick={() => setIdx(idx - 1)}
+        >
+          ← Back
+        </button>
+        <button
+          className="ghost small"
+          disabled={idx + 1 > maxAnswered}
+          onClick={() => setIdx(idx + 1)}
+        >
+          Forward →
+        </button>
+      </div>
       {!reveal && (
         <AnswerInput
           mic={mic}
@@ -2052,11 +2077,13 @@ function Quiz({ questions, title, mic, onFinish }) {
           <div className="result-mark">
             {reveal.correct ? "✓ Correct" : "✗ Incorrect"}
           </div>
-          <div className="said">You said: “{reveal.said}”</div>
+          <div className="said">You said: "{reveal.said}"</div>
           <AnswerList q={q} />
-          <button className="primary" onClick={next}>
-            {idx + 1 < questions.length ? "Next question →" : "See results"}
-          </button>
+          {isAtFrontier && (
+            <button className="primary" onClick={next}>
+              {idx + 1 < questions.length ? "Next question →" : "See results"}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -2452,6 +2479,9 @@ function Style() {
   .btn-row{display:flex;gap:10px}
   .btn-row .ghost{margin-top:12px;flex:1}
   .btn-row .primary{flex:1}
+  .nav-row{display:flex;gap:8px;margin:8px 0 4px}
+  .nav-row .ghost{flex:1}
+  .nav-row .ghost:disabled{opacity:.35;cursor:not-allowed}
   .footnote{font-size:12px;color:#5B6478;text-align:center;margin-top:18px;line-height:1.5}
 `}</style>
   );
