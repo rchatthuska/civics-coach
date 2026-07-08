@@ -2149,6 +2149,7 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
   const [maxPos, setMaxPos] = useState(0); // frontier: first not-yet-answered question
   const [lastResults, setLastResults] = useState(null);
   const [viewQ, setViewQ] = useState(null); // question being viewed read-only
+  const [quizQs, setQuizQs] = useState(all); // questions in the active quiz attempt
 
   const firstIncompleteIdx = all.findIndex(
     (q) => !completedQs.includes(q.n),
@@ -2156,10 +2157,21 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
   const allDone = firstIncompleteIdx === -1;
   const someDone = all.some((q) => completedQs.includes(q.n));
 
+  // Always rebuild the quiz from whatever isn't mastered yet (freshly
+  // shuffled), so leaving and re-entering the quiz never re-asks questions
+  // already answered correctly. If everything's already mastered (a
+  // deliberate retake), quiz the whole unit again.
+  const enterQuiz = () => {
+    const remaining = all.filter((q) => !completedQs.includes(q.n));
+    setQuizQs(shuffle(remaining.length ? remaining : all));
+    setViewQ(null);
+    setStage("quiz");
+  };
+
   const startLearning = () => {
     setViewQ(null);
     if (allDone) {
-      setStage("quiz");
+      enterQuiz();
     } else {
       setList(all);
       setPos(firstIncompleteIdx);
@@ -2174,7 +2186,7 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
       if (pos + 1 < list.length) {
         setMaxPos(maxPos + 1);
         setPos(pos + 1);
-      } else setStage("quiz");
+      } else enterQuiz();
     } else {
       // retried an already-answered one
       setPos(pos + 1);
@@ -2263,13 +2275,7 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
                   : "Start unit"}
             </button>
             {!allDone && (
-              <button
-                className="ghost"
-                onClick={() => {
-                  setViewQ(null);
-                  setStage("quiz");
-                }}
-              >
+              <button className="ghost" onClick={enterQuiz}>
                 Skip to unit quiz
               </button>
             )}
@@ -2290,7 +2296,7 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
 
       {stage === "quiz" && (
         <Quiz
-          questions={all}
+          questions={quizQs}
           title={"Unit " + (unitIdx + 1) + " quiz"}
           mic={mic}
           onFinish={quizDone}
@@ -2304,13 +2310,15 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
           <p>
             You got{" "}
             <b>
-              {lastResults.filter((r) => r.correct).length} of {all.length}
+              {lastResults.filter((r) => r.correct).length} of{" "}
+              {lastResults.length}
             </b>
-            . You need all {all.length} to pass the unit.
+            . You need to get every question right at least once to master
+            the unit.
           </p>
           <p>
-            Let's re-practice the {list.length} you missed, then retake the full
-            quiz:
+            Let's re-practice the {list.length} you missed, then retake the
+            quiz on just those:
           </p>
           <ul className="miss-list">
             {list.map((q) => (
