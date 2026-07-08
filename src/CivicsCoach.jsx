@@ -1658,6 +1658,39 @@ function shuffle(arr) {
   return a;
 }
 
+/* ================= local profiles (username + passcode) =================
+   These profiles live only in this browser's localStorage — there is no
+   server. Passcodes are hashed (SHA-256 when available) so they aren't
+   stored as plain text, but this is not real account security: anyone with
+   access to this browser's storage can still see/edit the data. */
+async function hashPass(text) {
+  try {
+    if (window.crypto && window.crypto.subtle) {
+      const enc = new TextEncoder().encode(text);
+      const buf = await window.crypto.subtle.digest("SHA-256", enc);
+      return Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+  } catch (e) {}
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return "fb" + (h >>> 0).toString(16);
+}
+function loadUsers() {
+  try {
+    const raw = localStorage.getItem("civics-users");
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveUsers(users) {
+  try {
+    localStorage.setItem("civics-users", JSON.stringify(users));
+  } catch (e) {}
+}
+
 /* ================= microphone hook ================= */
 function useMic() {
   const SR =
@@ -2003,7 +2036,7 @@ function AnswerList({ q }) {
 }
 
 /* ================= quiz (unit quiz + midterm share this) ================= */
-function Quiz({ questions, title, mic, onFinish }) {
+function Quiz({ questions, title, mic, onFinish, onCorrect }) {
   const [idx, setIdx] = useState(0);
   const [results, setResults] = useState([]);
   const [reveal, setReveal] = useState(null); // {correct, said}
@@ -2022,6 +2055,7 @@ function Quiz({ questions, title, mic, onFinish }) {
     const ok = matchAnswer(q, text);
     setReveal({ correct: ok, said: text });
     speak(ok ? "Correct." : "Incorrect.");
+    if (ok && onCorrect) onCorrect(q);
   };
   const next = () => {
     const newResults = [...results, { q, correct: reveal.correct }];
@@ -2080,14 +2114,57 @@ function Quiz({ questions, title, mic, onFinish }) {
   );
 }
 
+/* ================= read-only view of an already-mastered question ================= */
+function QuestionView({ q, onBack }) {
+  return (
+    <div className="card">
+      <div className="q-head">
+        <span className="q-num">Question {q.n}</span>
+        <span className="mastered-badge">✓ Mastered</span>
+      </div>
+      <VisualCard q={q} />
+      <h2 className="q-text">{q.q}</h2>
+      <AnswerList q={q} />
+      <button
+        className="ghost small"
+        onClick={() => speak(q.q + " ... " + q.a[0])}
+      >
+        🔊 Hear question &amp; answer
+      </button>
+      <button className="primary" onClick={onBack}>
+        ← Back to unit questions
+      </button>
+    </div>
+  );
+}
+
 /* ================= unit flow ================= */
-function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
+function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExit }) {
   const all = UNITS[unitIdx];
-  const [stage, setStage] = useState("learn"); // learn | quiz | review | relearn
+  const [stage, setStage] = useState("overview"); // overview | learn | quiz | review | relearn
   const [list, setList] = useState(all); // current learning list
   const [pos, setPos] = useState(0);
   const [maxPos, setMaxPos] = useState(0); // frontier: first not-yet-answered question
   const [lastResults, setLastResults] = useState(null);
+  const [viewQ, setViewQ] = useState(null); // question being viewed read-only
+
+  const firstIncompleteIdx = all.findIndex(
+    (q) => !completedQs.includes(q.n),
+  );
+  const allDone = firstIncompleteIdx === -1;
+  const someDone = all.some((q) => completedQs.includes(q.n));
+
+  const startLearning = () => {
+    setViewQ(null);
+    if (allDone) {
+      setStage("quiz");
+    } else {
+      setList(all);
+      setPos(firstIncompleteIdx);
+      setMaxPos(firstIncompleteIdx);
+      setStage("learn");
+    }
+  };
 
   const mastered = () => {
     if (pos === maxPos) {
@@ -2123,6 +2200,11 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
         <span className="unit-label">
           Unit {unitIdx + 1} · Questions {all[0].n}–{all[all.length - 1].n}
         </span>
+        {stage === "overview" && (
+          <span className="unit-stage">
+            {viewQ ? "Reviewing Q" + viewQ.n : "Unit overview"}
+          </span>
+        )}
         {stage === "learn" && (
           <span className="unit-stage">
             Learning {pos + 1}/{list.length}
@@ -2135,6 +2217,54 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
         )}
         {stage === "quiz" && <span className="unit-stage">Unit quiz</span>}
       </div>
+
+      {stage === "overview" && viewQ && (
+        <QuestionView q={viewQ} onBack={() => setViewQ(null)} />
+      )}
+
+      {stage === "overview" && !viewQ && (
+        <div className="card">
+          <h2 className="q-text">Unit {unitIdx + 1} questions</h2>
+          <p className="step-label">
+            {allDone
+              ? "You've mastered every question in this unit. Tap any question to review it, or retake the unit quiz."
+              : someDone
+                ? "Questions you've already gotten right in a quiz are marked ✓ — tap View to review them without redoing the drill."
+                : "You'll learn each question, then take a quiz on all of them."}
+          </p>
+          <ul className="q-overview-list">
+            {all.map((q) => {
+              const isDone = completedQs.includes(q.n);
+              return (
+                <li
+                  key={q.n}
+                  className={"q-overview-item" + (isDone ? " done" : "")}
+                >
+                  <span className="q-overview-num">Q{q.n}</span>
+                  <span className="q-overview-text">{q.q}</span>
+                  {isDone ? (
+                    <button
+                      className="ghost small"
+                      onClick={() => setViewQ(q)}
+                    >
+                      View
+                    </button>
+                  ) : (
+                    <span className="q-overview-pending">Not yet</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <button className="primary" onClick={startLearning}>
+            {allDone
+              ? "Retake unit quiz"
+              : someDone
+                ? "Continue unit"
+                : "Start unit"}
+          </button>
+        </div>
+      )}
 
       {(stage === "learn" || stage === "relearn") && (
         <LearnCard
@@ -2153,6 +2283,7 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
           title={"Unit " + (unitIdx + 1) + " quiz"}
           mic={mic}
           onFinish={quizDone}
+          onCorrect={onQuestionDone}
         />
       )}
 
@@ -2186,44 +2317,183 @@ function UnitFlow({ unitIdx, mic, onComplete, onExit }) {
   );
 }
 
+/* ================= login / create profile ================= */
+function Login({ onLogin }) {
+  const [mode, setMode] = useState("signin"); // signin | signup
+  const [username, setUsername] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const name = username.trim();
+    if (!name || !passcode) {
+      setError("Enter a name and a passcode.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    const users = loadUsers();
+    const key = name.toLowerCase();
+    const hash = await hashPass(passcode);
+
+    if (mode === "signup") {
+      if (users[key]) {
+        setError("That name is already taken — try signing in instead.");
+        setBusy(false);
+        return;
+      }
+      users[key] = { name, passHash: hash, createdAt: Date.now() };
+      saveUsers(users);
+      if (Object.keys(users).length === 1) {
+        const legacy = localStorage.getItem("civics-progress");
+        if (legacy) localStorage.setItem("civics-progress-" + key, legacy);
+      }
+      onLogin(key, name);
+    } else {
+      const u = users[key];
+      if (!u || u.passHash !== hash) {
+        setError("Wrong name or passcode.");
+        setBusy(false);
+        return;
+      }
+      onLogin(key, u.name);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div className="card login-card">
+      <h2 className="q-text">
+        {mode === "signup" ? "Create your profile" : "Welcome back"}
+      </h2>
+      <p className="login-note">
+        Each person practicing on this device gets their own name and
+        passcode, so everyone's completed units are tracked separately. This
+        stays on this device/browser only.
+      </p>
+      {error && <p className="warn">{error}</p>}
+      <div className="login-field">
+        <label>Name</label>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="e.g. Bobby"
+          autoFocus
+        />
+      </div>
+      <div className="login-field">
+        <label>Passcode</label>
+        <input
+          type="password"
+          value={passcode}
+          onChange={(e) => setPasscode(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Choose or enter a passcode"
+        />
+      </div>
+      <button className="primary" onClick={submit} disabled={busy}>
+        {mode === "signup" ? "Create profile" : "Sign in"}
+      </button>
+      <button
+        className="ghost small"
+        onClick={() => {
+          setMode(mode === "signup" ? "signin" : "signup");
+          setError("");
+        }}
+      >
+        {mode === "signup"
+          ? "Already have a profile? Sign in"
+          : "New here? Create a profile"}
+      </button>
+    </div>
+  );
+}
+
 /* ================= main app ================= */
 export default function CivicsCoach() {
   const mic = useMic();
+  const [currentUser, setCurrentUser] = useState(null); // {key, name}
+  const [authLoaded, setAuthLoaded] = useState(false);
   const [screen, setScreen] = useState("home"); // home | unit | midterm | midtermResult
   const [unitIdx, setUnitIdx] = useState(0);
   const [done, setDone] = useState([]); // completed unit indexes
+  const [completedQs, setCompletedQs] = useState([]); // question numbers answered correctly in a quiz
   const [midterm, setMidterm] = useState({ best: 0, taken: false });
   const [midtermQs, setMidtermQs] = useState([]);
   const [midtermRes, setMidtermRes] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const raw = localStorage.getItem("civics-progress");
-        if (raw) {
-          const p = JSON.parse(raw);
-          setDone(p.done || []);
-          setMidterm(p.midterm || { best: 0, taken: false });
-        }
-      } catch (e) {}
-      setLoaded(true);
-    })();
+    try {
+      const raw = localStorage.getItem("civics-current-user");
+      if (raw) setCurrentUser(JSON.parse(raw));
+    } catch (e) {}
+    setAuthLoaded(true);
   }, []);
 
-  const save = async (d, m) => {
+  useEffect(() => {
+    if (!currentUser) {
+      setLoaded(true);
+      return;
+    }
+    setLoaded(false);
+    try {
+      const raw = localStorage.getItem(
+        "civics-progress-" + currentUser.key,
+      );
+      if (raw) {
+        const p = JSON.parse(raw);
+        setDone(p.done || []);
+        setCompletedQs(p.completedQs || []);
+        setMidterm(p.midterm || { best: 0, taken: false });
+      } else {
+        setDone([]);
+        setCompletedQs([]);
+        setMidterm({ best: 0, taken: false });
+      }
+    } catch (e) {}
+    setLoaded(true);
+  }, [currentUser]);
+
+  const save = (d, m, c) => {
+    if (!currentUser) return;
     try {
       localStorage.setItem(
-        "civics-progress",
-        JSON.stringify({ done: d, midterm: m }),
+        "civics-progress-" + currentUser.key,
+        JSON.stringify({ done: d, midterm: m, completedQs: c }),
       );
     } catch (e) {}
   };
 
+  const handleLogin = (key, name) => {
+    const u = { key, name };
+    setCurrentUser(u);
+    try {
+      localStorage.setItem("civics-current-user", JSON.stringify(u));
+    } catch (e) {}
+  };
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setScreen("home");
+    try {
+      localStorage.removeItem("civics-current-user");
+    } catch (e) {}
+  };
+
+  const markQuestionDone = (q) => {
+    setCompletedQs((prev) => {
+      if (prev.includes(q.n)) return prev;
+      const next = [...prev, q.n];
+      save(done, midterm, next);
+      return next;
+    });
+  };
   const completeUnit = () => {
     const d = done.includes(unitIdx) ? done : [...done, unitIdx];
     setDone(d);
-    save(d, midterm);
+    save(d, midterm, completedQs);
     setScreen("home");
     speak("Congratulations! Unit " + (unitIdx + 1) + " complete.");
   };
@@ -2236,13 +2506,31 @@ export default function CivicsCoach() {
     const score = results.filter((r) => r.correct).length;
     const m = { best: Math.max(midterm.best, score), taken: true };
     setMidterm(m);
-    save(done, m);
+    save(done, m, completedQs);
     setMidtermRes(results);
     setScreen("midtermResult");
   };
 
   const midtermUnlocked = [0, 1, 2, 3, 4, 5].every((i) => done.includes(i));
-  const totalDoneQs = done.reduce((s, i) => s + UNITS[i].length, 0);
+  const totalDoneQs = completedQs.length;
+
+  if (!authLoaded) return <div className="app" />;
+
+  if (!currentUser)
+    return (
+      <div className="app">
+        <Style />
+        <header className="hero">
+          <div className="seal">★</div>
+          <h1>Civics Coach</h1>
+          <p className="tagline">
+            2025 USCIS Naturalization Test · 128 questions · listen, repeat
+            ×3, answer
+          </p>
+        </header>
+        <Login onLogin={handleLogin} />
+      </div>
+    );
 
   if (!loaded)
     return (
@@ -2264,6 +2552,12 @@ export default function CivicsCoach() {
               2025 USCIS Naturalization Test · 128 questions · listen, repeat
               ×3, answer
             </p>
+            <div className="user-bar">
+              <span>Signed in as {currentUser.name}</span>
+              <button className="ghost small" onClick={handleLogout}>
+                Switch profile
+              </button>
+            </div>
             <div className="progress-bar">
               <div
                 className="progress-fill"
@@ -2280,6 +2574,9 @@ export default function CivicsCoach() {
               const locked =
                 i > 0 && !done.includes(i - 1) && !done.includes(i);
               const isDone = done.includes(i);
+              const unitMastered = u.filter((q) =>
+                completedQs.includes(q.n),
+              ).length;
               return (
                 <button
                   key={i}
@@ -2299,7 +2596,13 @@ export default function CivicsCoach() {
                     Q{u[0].n}–{u[u.length - 1].n}
                   </span>
                   <span className="unit-status">
-                    {isDone ? "✓ Passed" : locked ? "🔒 Locked" : "Start →"}
+                    {isDone
+                      ? "✓ Passed"
+                      : locked
+                        ? "🔒 Locked"
+                        : unitMastered > 0
+                          ? unitMastered + "/" + u.length + " · Continue →"
+                          : "Start →"}
                   </span>
                 </button>
               );
@@ -2334,7 +2637,9 @@ export default function CivicsCoach() {
         <UnitFlow
           unitIdx={unitIdx}
           mic={mic}
+          completedQs={completedQs}
           onComplete={completeUnit}
+          onQuestionDone={markQuestionDone}
           onExit={() => setScreen("home")}
         />
       )}
@@ -2480,6 +2785,22 @@ function Style() {
   .btn-row .ghost{margin-top:12px;flex:1}
   .btn-row .primary{flex:1}
   .footnote{font-size:12px;color:#5B6478;text-align:center;margin-top:18px;line-height:1.5}
+  .login-card{max-width:420px;margin:0 auto}
+  .login-note{font-size:13px;color:#5B6478;line-height:1.5;margin-bottom:16px}
+  .login-field{margin-bottom:12px}
+  .login-field label{display:block;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#8A5A00;margin-bottom:4px}
+  .login-field input{width:100%;padding:12px;border:1px solid #C6CEDC;border-radius:10px;font:inherit;font-size:15px;box-sizing:border-box}
+  .login-field input:focus{outline:2px solid #14264C;outline-offset:1px}
+  .user-bar{display:flex;align-items:center;justify-content:center;gap:10px;font-size:13px;opacity:.9;margin-top:10px}
+  .user-bar .ghost.small{margin-bottom:0}
+  .mastered-badge{font-size:12px;font-weight:700;color:#2E7D4F;background:#F1F8F3;border:1px solid #2E7D4F;border-radius:99px;padding:5px 12px}
+  .q-overview-list{list-style:none;margin:12px 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .q-overview-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #E2E7F0;border-radius:10px;background:#fff}
+  .q-overview-item.done{border-color:#2E7D4F;background:#F1F8F3}
+  .q-overview-num{font-size:12px;font-weight:700;color:#8A5A00;flex-shrink:0;width:34px}
+  .q-overview-text{font-size:13px;color:#182236;flex:1}
+  .q-overview-pending{font-size:12px;color:#9AA3B5;flex-shrink:0}
+  .q-overview-item .ghost.small{margin-bottom:0;flex-shrink:0}
 `}</style>
   );
 }
