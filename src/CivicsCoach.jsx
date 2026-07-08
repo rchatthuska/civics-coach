@@ -2114,13 +2114,15 @@ function Quiz({ questions, title, mic, onFinish, onCorrect }) {
   );
 }
 
-/* ================= read-only view of an already-mastered question ================= */
-function QuestionView({ q, onBack }) {
+/* ================= read-only view of a question ================= */
+function QuestionView({ q, mastered, onBack }) {
   return (
     <div className="card">
       <div className="q-head">
         <span className="q-num">Question {q.n}</span>
-        <span className="mastered-badge">✓ Mastered</span>
+        <span className={"mastered-badge" + (mastered ? "" : " preview")}>
+          {mastered ? "✓ Mastered" : "Preview"}
+        </span>
       </div>
       <VisualCard q={q} />
       <h2 className="q-text">{q.q}</h2>
@@ -2219,18 +2221,20 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
       </div>
 
       {stage === "overview" && viewQ && (
-        <QuestionView q={viewQ} onBack={() => setViewQ(null)} />
+        <QuestionView
+          q={viewQ}
+          mastered={completedQs.includes(viewQ.n)}
+          onBack={() => setViewQ(null)}
+        />
       )}
 
       {stage === "overview" && !viewQ && (
         <div className="card">
           <h2 className="q-text">Unit {unitIdx + 1} questions</h2>
           <p className="step-label">
-            {allDone
-              ? "You've mastered every question in this unit. Tap any question to review it, or retake the unit quiz."
-              : someDone
-                ? "Questions you've already gotten right in a quiz are marked ✓ — tap View to review them without redoing the drill."
-                : "You'll learn each question, then take a quiz on all of them."}
+            Tap any question below to preview it — no practicing required.
+            Mastered ones are marked ✓. Ready to be tested? Take the unit quiz
+            directly, or start guided practice below.
           </p>
           <ul className="q-overview-list">
             {all.map((q) => {
@@ -2242,27 +2246,34 @@ function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone, onExi
                 >
                   <span className="q-overview-num">Q{q.n}</span>
                   <span className="q-overview-text">{q.q}</span>
-                  {isDone ? (
-                    <button
-                      className="ghost small"
-                      onClick={() => setViewQ(q)}
-                    >
-                      View
-                    </button>
-                  ) : (
-                    <span className="q-overview-pending">Not yet</span>
-                  )}
+                  {isDone && <span className="q-overview-check">✓</span>}
+                  <button className="ghost small" onClick={() => setViewQ(q)}>
+                    View
+                  </button>
                 </li>
               );
             })}
           </ul>
-          <button className="primary" onClick={startLearning}>
-            {allDone
-              ? "Retake unit quiz"
-              : someDone
-                ? "Continue unit"
-                : "Start unit"}
-          </button>
+          <div className="btn-row">
+            <button className="primary" onClick={startLearning}>
+              {allDone
+                ? "Retake unit quiz"
+                : someDone
+                  ? "Continue unit"
+                  : "Start unit"}
+            </button>
+            {!allDone && (
+              <button
+                className="ghost"
+                onClick={() => {
+                  setViewQ(null);
+                  setStage("quiz");
+                }}
+              >
+                Skip to unit quiz
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -2794,12 +2805,13 @@ function Style() {
   .user-bar{display:flex;align-items:center;justify-content:center;gap:10px;font-size:13px;opacity:.9;margin-top:10px}
   .user-bar .ghost.small{margin-bottom:0}
   .mastered-badge{font-size:12px;font-weight:700;color:#2E7D4F;background:#F1F8F3;border:1px solid #2E7D4F;border-radius:99px;padding:5px 12px}
+  .mastered-badge.preview{color:#5B6478;background:#EDF0F6;border-color:#C6CEDC}
   .q-overview-list{list-style:none;margin:12px 0;padding:0;display:flex;flex-direction:column;gap:6px}
   .q-overview-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #E2E7F0;border-radius:10px;background:#fff}
   .q-overview-item.done{border-color:#2E7D4F;background:#F1F8F3}
   .q-overview-num{font-size:12px;font-weight:700;color:#8A5A00;flex-shrink:0;width:34px}
   .q-overview-text{font-size:13px;color:#182236;flex:1}
-  .q-overview-pending{font-size:12px;color:#9AA3B5;flex-shrink:0}
+  .q-overview-check{color:#2E7D4F;font-weight:700;flex-shrink:0}
   .q-overview-item .ghost.small{margin-bottom:0;flex-shrink:0}
 `}</style>
   );
