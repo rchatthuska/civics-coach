@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 
+const WATCHDOG_MS = 12000; // some browsers never fire onend/onerror — force-recover
+
 export function useMic() {
   const SR =
     typeof window !== "undefined" &&
@@ -10,25 +12,32 @@ export function useMic() {
   const recRef = useRef(null);
   const cbRef = useRef(null);
   const finalRef = useRef("");
+  const watchdogRef = useRef(null);
+
+  const finish = useCallback((result) => {
+    clearTimeout(watchdogRef.current);
+    recRef.current = null;
+    setListening(false);
+    setInterim("");
+    const cb = cbRef.current;
+    cbRef.current = null;
+    if (cb) cb(result);
+  }, []);
 
   const start = useCallback(
-    async (onDone) => {
+    (onDone) => {
       if (!SR) {
         setBlocked(true);
         onDone(null);
         return;
       }
+      if (recRef.current) return; // already listening — ignore re-entrant taps
+
+      // Stop any question/answer being read aloud so the mic doesn't hear it.
       try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-          s.getTracks().forEach((t) => t.stop());
-        }
-      } catch (err) {
-        setBlocked(true);
-        setListening(false);
-        onDone(null);
-        return;
-      }
+        window.speechSynthesis && window.speechSynthesis.cancel();
+      } catch (e) {}
+
       try {
         const rec = new SR();
         rec.lang = "en-US";
@@ -47,13 +56,7 @@ export function useMic() {
           finalRef.current = fin;
           setInterim(fin + inter);
         };
-        rec.onend = () => {
-          setListening(false);
-          setInterim("");
-          const cb = cbRef.current;
-          cbRef.current = null;
-          if (cb) cb(finalRef.current.trim());
-        };
+        rec.onend = () => finish(finalRef.current.trim());
         rec.onerror = (e) => {
           if (
             e &&
@@ -63,22 +66,26 @@ export function useMic() {
               e.error === "network")
           )
             setBlocked(true);
-          setListening(false);
-          setInterim("");
-          const cb = cbRef.current;
-          cbRef.current = null;
-          if (cb) cb(null);
+          finish(null);
         };
         recRef.current = rec;
         setListening(true);
         rec.start();
+        watchdogRef.current = setTimeout(() => {
+          try {
+            rec.stop();
+          } catch (e) {}
+          // Some browsers hang without ever firing onend/onerror after stop().
+          if (cbRef.current) finish(null);
+        }, WATCHDOG_MS);
       } catch (e) {
         setBlocked(true);
+        recRef.current = null;
         setListening(false);
         onDone(null);
       }
     },
-    [SR],
+    [SR, finish],
   );
 
   const stop = useCallback(() => {
