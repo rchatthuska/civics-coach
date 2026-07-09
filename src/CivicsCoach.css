@@ -64,9 +64,11 @@
   .ans-note{font-size:12px;color:#A33B2E;margin-top:6px;font-weight:600}
   .drill{background:#FDF9EE;border:1px solid #C9A227;border-radius:12px;padding:14px;margin-bottom:10px}
   .drill-ans{font-family:Georgia,serif;font-size:19px;font-weight:700;color:#14264C;margin-top:4px}
-  .alt{margin-top:8px;font-size:13px;color:#5B6478}
-  .alt summary{cursor:pointer}
-  .alt ul{margin:6px 0 0;padding-left:18px}
+  .answer-picker{margin-top:10px}
+  .picker-label{font-size:12px;color:#5B6478;margin-bottom:6px}
+  .picker-options{display:flex;flex-wrap:wrap;gap:6px}
+  .picker-chip{background:#fff;border:1px solid #C6CEDC;border-radius:99px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;color:#14264C}
+  .picker-chip.chosen{background:#14264C;color:#fff;border-color:#14264C}
   .quiz-dots{display:flex;gap:4px;flex-wrap:wrap}
   .dot{width:10px;height:10px;border-radius:50%;background:#D8DEE9}
   .dot.cur{background:#14264C}.dot.ok{background:#2E7D4F}.dot.bad{background:#A33B2E}

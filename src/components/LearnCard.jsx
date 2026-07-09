@@ -6,9 +6,11 @@ import { AnswerInput } from "./AnswerInput";
 import { AnswerList } from "./AnswerList";
 
 export function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
+  const need = q.r || 1;
   const [reps, setReps] = useState(0); // 0..3 successful repetitions
   const [phase, setPhase] = useState("repeat"); // repeat | answer | wrong | right
   const [feedback, setFeedback] = useState("");
+  const [chosen, setChosen] = useState(() => q.a.slice(0, need)); // which accepted answer(s) to study
 
   const clean = (s) =>
     s
@@ -17,16 +19,40 @@ export function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
       .replace(/["“”]/g, "")
       .replace(/\s+/g, " ")
       .trim();
-  const need = q.r || 1;
-  const drill = q.a.slice(0, need).map(clean); // the answer(s) we teach
+  const drill = chosen.map(clean); // the answer(s) we teach
   const answerText = drill.join(", ");
-  const teach = () => speak(q.q + " ... Remember this answer: " + answerText);
+  const teachFor = (answers) =>
+    speak(q.q + " ... Remember this answer: " + answers.map(clean).join(", "));
+  const teach = () => teachFor(chosen);
+
   useEffect(() => {
+    const initial = q.a.slice(0, need);
+    setChosen(initial);
     setReps(0);
     setPhase("repeat");
     setFeedback("");
-    teach();
+    teachFor(initial);
   }, [q]);
+
+  // Any accepted answer always counts here too — picking one just changes
+  // what's displayed/spoken to study; matchAnswer still checks all of q.k,
+  // same as it does in the quiz.
+  const pickAnswer = (a) => {
+    let next = chosen;
+    if (need === 1) {
+      next = chosen[0] === a ? chosen : [a];
+    } else if (chosen.includes(a)) {
+      next = chosen.length <= 1 ? chosen : chosen.filter((x) => x !== a);
+    } else {
+      next = chosen.length >= need ? chosen : [...chosen, a];
+    }
+    if (next === chosen) return;
+    setChosen(next);
+    setReps(0);
+    setPhase("repeat");
+    setFeedback("");
+    teachFor(next);
+  };
 
   const handleRepeat = (text) => {
     if (text === null) {
@@ -103,14 +129,26 @@ export function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
             </div>
             <div className="drill-ans">{drill.join("  ·  ")}</div>
             {q.a.length > need && (
-              <details className="alt">
-                <summary>Other accepted answers ({q.a.length - need})</summary>
-                <ul>
-                  {q.a.slice(need).map((a, i) => (
-                    <li key={i}>{a}</li>
+              <div className="answer-picker">
+                <div className="picker-label">
+                  {need > 1
+                    ? `Pick which ${need} you'd rather learn (${chosen.length}/${need} selected):`
+                    : "Pick a different accepted answer to learn:"}
+                </div>
+                <div className="picker-options">
+                  {q.a.map((a, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={"picker-chip" + (chosen.includes(a) ? " chosen" : "")}
+                      onClick={() => pickAnswer(a)}
+                    >
+                      {chosen.includes(a) ? "✓ " : ""}
+                      {a}
+                    </button>
                   ))}
-                </ul>
-              </details>
+                </div>
+              </div>
             )}
           </div>
           <button className="ghost small" onClick={teach}>
