@@ -1,4 +1,7 @@
+import { neededAnswerCount } from "../lib/textMatch";
+
 export function AnswerList({ q }) {
+  const need = neededAnswerCount(q);
   return (
     <div className="ans-list">
       <div className="ans-title">Accepted answers</div>
@@ -7,7 +10,7 @@ export function AnswerList({ q }) {
           <li key={i}>{a}</li>
         ))}
       </ul>
-      {q.r > 1 && <div className="ans-note">You must give {q.r} of these.</div>}
+      {need > 1 && <div className="ans-note">You must give {need} of these.</div>}
     </div>
   );
 }

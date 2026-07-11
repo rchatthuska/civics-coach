@@ -13,6 +13,19 @@ export function matchAnswer(q, text) {
   return hits >= (q.r || 1);
 }
 
+// q.r counts distinct keyword hits required, which usually means "pick r
+// separate items from q.a" (e.g. name 2 of these 6 rights). But for
+// questions where q.a holds alternate whole phrasings of one full answer
+// (e.g. "Legislative, executive, and judicial" vs "Congress, president,
+// and the courts"), a single a[] entry already contains all r keywords.
+// Detect that case so callers don't force-combine or demand r separate
+// picks when one accepted answer already suffices.
+export function neededAnswerCount(q) {
+  const r = q.r || 1;
+  if (r <= 1) return 1;
+  return matchAnswer(q, q.a[0]) ? 1 : r;
+}
+
 export function similarity(target, said) {
   const tw = new Set(
     norm(target)

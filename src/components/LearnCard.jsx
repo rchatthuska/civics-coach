@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { matchAnswer } from "../lib/textMatch";
+import { matchAnswer, neededAnswerCount } from "../lib/textMatch";
 import { speak } from "../lib/speech";
 import { VisualCard } from "./VisualCard";
 import { AnswerInput } from "./AnswerInput";
 import { AnswerList } from "./AnswerList";
 
 export function LearnCard({ q, onMastered, mic, onPrev, onForward, answered }) {
-  const need = q.r || 1;
+  const need = neededAnswerCount(q);
   const [reps, setReps] = useState(0); // 0..3 successful repetitions
   const [phase, setPhase] = useState("repeat"); // repeat | answer | wrong | right
   const [feedback, setFeedback] = useState("");
