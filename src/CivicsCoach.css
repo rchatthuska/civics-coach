@@ -13,6 +13,8 @@
   .unit-card.done{border-color:#2E7D4F;background:#F1F8F3}
   .unit-card.locked{opacity:.5;cursor:not-allowed}
   .unit-card.midterm{border:1.5px solid #C9A227;background:#FDF9EE;grid-column:1/-1}
+  .unit-card.final{border:1.5px solid #A33B2E;background:#FBF1EF;grid-column:1/-1}
+  .unit-card.practice{border:1.5px dashed #5B6478;background:#F5F7FB;grid-column:1/-1}
   .unit-n{font-family:Georgia,serif;font-weight:700;font-size:17px;color:#14264C}
   .unit-range{font-size:12px;color:#5B6478}
   .unit-status{font-size:12px;font-weight:600;color:#2E7D4F;margin-top:4px}

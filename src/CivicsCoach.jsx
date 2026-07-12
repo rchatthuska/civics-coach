@@ -14,13 +14,18 @@ export default function CivicsCoach() {
   const mic = useMic();
   const [currentUser, setCurrentUser] = useState(null); // {key, name}
   const [authLoaded, setAuthLoaded] = useState(false);
-  const [screen, setScreen] = useState("home"); // home | unit | midterm | midtermResult
+  const [screen, setScreen] = useState("home"); // home | unit | midterm | midtermResult | final | finalResult | practice | practiceResult
   const [unitIdx, setUnitIdx] = useState(0);
   const [done, setDone] = useState([]); // completed unit indexes
   const [completedQs, setCompletedQs] = useState([]); // question numbers answered correctly in a quiz
   const [midterm, setMidterm] = useState({ best: 0, taken: false });
   const [midtermQs, setMidtermQs] = useState([]);
   const [midtermRes, setMidtermRes] = useState(null);
+  const [finalInterview, setFinalInterview] = useState({ best: 0, taken: false });
+  const [finalQs, setFinalQs] = useState([]);
+  const [finalRes, setFinalRes] = useState(null);
+  const [practiceQs, setPracticeQs] = useState([]);
+  const [practiceRes, setPracticeRes] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -46,21 +51,28 @@ export default function CivicsCoach() {
         setDone(p.done || []);
         setCompletedQs(p.completedQs || []);
         setMidterm(p.midterm || { best: 0, taken: false });
+        setFinalInterview(p.finalInterview || { best: 0, taken: false });
       } else {
         setDone([]);
         setCompletedQs([]);
         setMidterm({ best: 0, taken: false });
+        setFinalInterview({ best: 0, taken: false });
       }
     } catch (e) {}
     setLoaded(true);
   }, [currentUser]);
 
-  const save = (d, m, c) => {
+  const save = (d, m, c, f) => {
     if (!currentUser) return;
     try {
       localStorage.setItem(
         "civics-progress-" + currentUser.key,
-        JSON.stringify({ done: d, midterm: m, completedQs: c }),
+        JSON.stringify({
+          done: d,
+          midterm: m,
+          completedQs: c,
+          finalInterview: f,
+        }),
       );
     } catch (e) {}
   };
@@ -84,14 +96,14 @@ export default function CivicsCoach() {
     setCompletedQs((prev) => {
       if (prev.includes(q.n)) return prev;
       const next = [...prev, q.n];
-      save(done, midterm, next);
+      save(done, midterm, next, finalInterview);
       return next;
     });
   };
   const completeUnit = () => {
     const d = done.includes(unitIdx) ? done : [...done, unitIdx];
     setDone(d);
-    save(d, midterm, completedQs);
+    save(d, midterm, completedQs, finalInterview);
     setScreen("home");
     speak("Congratulations! Unit " + (unitIdx + 1) + " complete.");
   };
@@ -104,12 +116,37 @@ export default function CivicsCoach() {
     const score = results.filter((r) => r.correct).length;
     const m = { best: Math.max(midterm.best, score), taken: true };
     setMidterm(m);
-    save(done, m, completedQs);
+    save(done, m, completedQs, finalInterview);
     setMidtermRes(results);
     setScreen("midtermResult");
   };
 
+  const startFinal = () => {
+    setFinalQs(shuffle(Q).slice(0, 20));
+    setFinalRes(null);
+    setScreen("final");
+  };
+  const finalDone = (results) => {
+    const score = results.filter((r) => r.correct).length;
+    const f = { best: Math.max(finalInterview.best, score), taken: true };
+    setFinalInterview(f);
+    save(done, midterm, completedQs, f);
+    setFinalRes(results);
+    setScreen("finalResult");
+  };
+
+  const startPractice = () => {
+    setPracticeQs(shuffle(Q));
+    setPracticeRes(null);
+    setScreen("practice");
+  };
+  const practiceDone = (results) => {
+    setPracticeRes(results);
+    setScreen("practiceResult");
+  };
+
   const midtermUnlocked = [0, 1, 2, 3, 4, 5].every((i) => done.includes(i));
+  const finalUnlocked = UNITS.every((_, i) => done.includes(i));
   const totalDoneQs = completedQs.length;
 
   if (!authLoaded) return <div className="app" />;
@@ -219,6 +256,26 @@ export default function CivicsCoach() {
                   : "🔒 Finish units 1–6"}
               </span>
             </button>
+            <button
+              className={"unit-card final" + (finalUnlocked ? "" : " locked")}
+              disabled={!finalUnlocked}
+              onClick={startFinal}
+            >
+              <span className="unit-n">Final Interview</span>
+              <span className="unit-range">20 random of all 128</span>
+              <span className="unit-status">
+                {finalUnlocked
+                  ? finalInterview.taken
+                    ? "Best: " + finalInterview.best + "/20 · Retake →"
+                    : "Start →"
+                  : "🔒 Finish all 13 units"}
+              </span>
+            </button>
+            <button className="unit-card practice" onClick={startPractice}>
+              <span className="unit-n">Practice Quiz</span>
+              <span className="unit-range">All 128, freshly shuffled</span>
+              <span className="unit-status">Start →</span>
+            </button>
           </div>
           <p className="footnote">
             Officials' names (President, Speaker, Governor, senators…) change —
@@ -285,6 +342,116 @@ export default function CivicsCoach() {
           <div className="btn-row">
             <button className="primary" onClick={startMidterm}>
               Retake midterm
+            </button>
+            <button className="ghost" onClick={() => setScreen("home")}>
+              Back to units
+            </button>
+          </div>
+        </div>
+      )}
+
+      {screen === "final" && (
+        <div>
+          <div className="topbar">
+            <button className="ghost small" onClick={() => setScreen("home")}>
+              ← Exit final interview
+            </button>
+          </div>
+          <Quiz
+            questions={finalQs}
+            title="Final Interview"
+            mic={mic}
+            onFinish={finalDone}
+          />
+        </div>
+      )}
+
+      {screen === "finalResult" && finalRes && (
+        <div className="card">
+          <h2 className="q-text">Final interview results</h2>
+          <div
+            className={
+              "big-score " +
+              (finalRes.filter((r) => r.correct).length >= 12 ? "ok" : "bad")
+            }
+          >
+            {finalRes.filter((r) => r.correct).length} / 20
+          </div>
+          <p>
+            {finalRes.filter((r) => r.correct).length >= 12
+              ? "Pass — the real interview stops once you've answered 12 correctly!"
+              : "Keep practicing the missed ones below, then retake."}
+          </p>
+          {finalRes.some((r) => !r.correct) && (
+            <ul className="miss-list">
+              {finalRes
+                .filter((r) => !r.correct)
+                .map((r) => (
+                  <li key={r.q.n}>
+                    Q{r.q.n}: {r.q.q} — <i>{r.q.a[0]}</i>
+                  </li>
+                ))}
+            </ul>
+          )}
+          <div className="btn-row">
+            <button className="primary" onClick={startFinal}>
+              Retake final interview
+            </button>
+            <button className="ghost" onClick={() => setScreen("home")}>
+              Back to units
+            </button>
+          </div>
+        </div>
+      )}
+
+      {screen === "practice" && (
+        <div>
+          <div className="topbar">
+            <button className="ghost small" onClick={() => setScreen("home")}>
+              ← Exit practice quiz
+            </button>
+          </div>
+          <Quiz
+            questions={practiceQs}
+            title="Practice Quiz"
+            mic={mic}
+            onFinish={practiceDone}
+          />
+        </div>
+      )}
+
+      {screen === "practiceResult" && practiceRes && (
+        <div className="card">
+          <h2 className="q-text">Practice quiz results</h2>
+          <div
+            className={
+              "big-score " +
+              (practiceRes.filter((r) => r.correct).length >= 100
+                ? "ok"
+                : "bad")
+            }
+          >
+            {practiceRes.filter((r) => r.correct).length} / {practiceRes.length}
+          </div>
+          <p>
+            {practiceRes.some((r) => !r.correct)
+              ? "Review the missed ones below, then try again — the order is reshuffled every time."
+              : "All 128, correct! Take it again anytime — the order reshuffles each attempt."}
+          </p>
+          {practiceRes.some((r) => !r.correct) && (
+            <ul className="miss-list">
+              {practiceRes
+                .filter((r) => !r.correct)
+                .map((r) => (
+                  <li key={r.q.n}>
+                    Q{r.q.n}: {r.q.q} — <i>{r.q.a[0]}</i>
+                  </li>
+                ))}
+            </ul>
+          )}
+          <div className="btn-row">
+            <button className="primary" onClick={startPractice}>
+              Retake practice quiz
             </button>
             <button className="ghost" onClick={() => setScreen("home")}>
               Back to units
