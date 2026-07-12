@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { hashPass, loadUsers, saveUsers } from "../lib/storage";
+import { cloudUnavailable, signIn, signUp } from "../lib/storage";
 
 export function Login({ onLogin }) {
   const [mode, setMode] = useState("signin"); // signin | signup
@@ -14,33 +14,22 @@ export function Login({ onLogin }) {
       setError("Enter a name and a passcode.");
       return;
     }
+    if (cloudUnavailable()) {
+      setError(
+        "Cloud sync isn't configured yet — see .env.example to set up Firebase.",
+      );
+      return;
+    }
     setBusy(true);
     setError("");
-    const users = loadUsers();
-    const key = name.toLowerCase();
-    const hash = await hashPass(passcode);
-
-    if (mode === "signup") {
-      if (users[key]) {
-        setError("That name is already taken — try signing in instead.");
-        setBusy(false);
-        return;
-      }
-      users[key] = { name, passHash: hash, createdAt: Date.now() };
-      saveUsers(users);
-      if (Object.keys(users).length === 1) {
-        const legacy = localStorage.getItem("civics-progress");
-        if (legacy) localStorage.setItem("civics-progress-" + key, legacy);
-      }
-      onLogin(key, name);
-    } else {
-      const u = users[key];
-      if (!u || u.passHash !== hash) {
-        setError("Wrong name or passcode.");
-        setBusy(false);
-        return;
-      }
-      onLogin(key, u.name);
+    try {
+      const user =
+        mode === "signup"
+          ? await signUp(name, passcode)
+          : await signIn(name, passcode);
+      onLogin(user);
+    } catch (e) {
+      setError(e.message);
     }
     setBusy(false);
   };
@@ -51,9 +40,9 @@ export function Login({ onLogin }) {
         {mode === "signup" ? "Create your profile" : "Welcome back"}
       </h2>
       <p className="login-note">
-        Each person practicing on this device gets their own name and
-        passcode, so everyone's completed units are tracked separately. This
-        stays on this device/browser only.
+        Each person gets their own name and passcode (6+ characters).
+        Progress syncs to the cloud, so signing in with the same name and
+        passcode on any browser or device picks up right where you left off.
       </p>
       {error && <p className="warn">{error}</p>}
       <div className="login-field">

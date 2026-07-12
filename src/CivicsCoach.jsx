@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import "./CivicsCoach.css";
 import { Q } from "./data/questions";
 import { UNITS } from "./lib/units";
 import { shuffle } from "./lib/shuffle";
 import { speak } from "./lib/speech";
 import { useMic } from "./hooks/useMic";
+import { auth, firebaseReady } from "./lib/firebase";
+import { loadProgress, saveProgress } from "./lib/storage";
 import { UnitFlow } from "./components/UnitFlow";
 import { Quiz } from "./components/Quiz";
 import { Login } from "./components/Login";
@@ -12,7 +15,7 @@ import { Login } from "./components/Login";
 /* ================= main app ================= */
 export default function CivicsCoach() {
   const mic = useMic();
-  const [currentUser, setCurrentUser] = useState(null); // {key, name}
+  const [currentUser, setCurrentUser] = useState(null); // {uid, key, name}
   const [authLoaded, setAuthLoaded] = useState(false);
   const [screen, setScreen] = useState("home"); // home | unit | midterm | midtermResult | final | finalResult | practice | practiceResult
   const [unitIdx, setUnitIdx] = useState(0);
@@ -29,11 +32,20 @@ export default function CivicsCoach() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("civics-current-user");
-      if (raw) setCurrentUser(JSON.parse(raw));
-    } catch (e) {}
-    setAuthLoaded(true);
+    if (!firebaseReady) {
+      setAuthLoaded(true);
+      return;
+    }
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const key = user.email.split("@")[0];
+        setCurrentUser({ uid: user.uid, key, name: user.displayName || key });
+      } else {
+        setCurrentUser(null);
+      }
+      setAuthLoaded(true);
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
@@ -42,54 +54,41 @@ export default function CivicsCoach() {
       return;
     }
     setLoaded(false);
-    try {
-      const raw = localStorage.getItem(
-        "civics-progress-" + currentUser.key,
-      );
-      if (raw) {
-        const p = JSON.parse(raw);
-        setDone(p.done || []);
-        setCompletedQs(p.completedQs || []);
-        setMidterm(p.midterm || { best: 0, taken: false });
-        setFinalInterview(p.finalInterview || { best: 0, taken: false });
-      } else {
+    loadProgress(currentUser.uid)
+      .then((p) => {
+        setDone((p && p.done) || []);
+        setCompletedQs((p && p.completedQs) || []);
+        setMidterm((p && p.midterm) || { best: 0, taken: false });
+        setFinalInterview(
+          (p && p.finalInterview) || { best: 0, taken: false },
+        );
+      })
+      .catch(() => {
         setDone([]);
         setCompletedQs([]);
         setMidterm({ best: 0, taken: false });
         setFinalInterview({ best: 0, taken: false });
-      }
-    } catch (e) {}
-    setLoaded(true);
+      })
+      .finally(() => setLoaded(true));
   }, [currentUser]);
 
   const save = (d, m, c, f) => {
     if (!currentUser) return;
-    try {
-      localStorage.setItem(
-        "civics-progress-" + currentUser.key,
-        JSON.stringify({
-          done: d,
-          midterm: m,
-          completedQs: c,
-          finalInterview: f,
-        }),
-      );
-    } catch (e) {}
+    saveProgress(currentUser.uid, {
+      done: d,
+      midterm: m,
+      completedQs: c,
+      finalInterview: f,
+    }).catch(() => {});
   };
 
-  const handleLogin = (key, name) => {
-    const u = { key, name };
-    setCurrentUser(u);
-    try {
-      localStorage.setItem("civics-current-user", JSON.stringify(u));
-    } catch (e) {}
+  const handleLogin = (user) => {
+    setCurrentUser(user);
   };
   const handleLogout = () => {
     setCurrentUser(null);
     setScreen("home");
-    try {
-      localStorage.removeItem("civics-current-user");
-    } catch (e) {}
+    signOut(auth).catch(() => {});
   };
 
   const markQuestionDone = (q) => {
