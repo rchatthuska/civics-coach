@@ -7,6 +7,9 @@ Questions can be read aloud via text-to-speech, and answers can be given by
 typing or by speaking into the microphone. Sign-in and progress are synced
 to the cloud so the same account shows the same progress on any device.
 
+# CLICK HERE
+https://civics-coach-git-main-rumesh.vercel.app/
+
 ## Features
 
 - **Unit-based learning flow** — questions grouped into units, worked through
