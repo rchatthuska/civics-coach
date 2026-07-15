@@ -13,6 +13,7 @@ export function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone
   const [maxPos, setMaxPos] = useState(0); // frontier: first not-yet-answered question
   const [lastResults, setLastResults] = useState(null);
   const [viewQ, setViewQ] = useState(null); // question being viewed read-only
+  const [practiceQ, setPracticeQ] = useState(null); // question being drilled standalone
   const [quizQs, setQuizQs] = useState(all); // questions in the active quiz attempt
 
   const firstIncompleteIdx = all.findIndex(
@@ -80,7 +81,11 @@ export function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone
         </span>
         {stage === "overview" && (
           <span className="unit-stage">
-            {viewQ ? "Reviewing Q" + viewQ.n : "Unit overview"}
+            {viewQ
+              ? "Reviewing Q" + viewQ.n
+              : practiceQ
+                ? "Practicing Q" + practiceQ.n
+                : "Unit overview"}
           </span>
         )}
         {stage === "learn" && (
@@ -104,7 +109,27 @@ export function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone
         />
       )}
 
-      {stage === "overview" && !viewQ && (
+      {stage === "overview" && !viewQ && practiceQ && (
+        <div>
+          <button
+            className="ghost small"
+            onClick={() => setPracticeQ(null)}
+          >
+            ← Back to unit questions
+          </button>
+          <LearnCard
+            key={practiceQ.n}
+            q={practiceQ}
+            mic={mic}
+            onMastered={() => {
+              onQuestionDone(practiceQ);
+              setPracticeQ(null);
+            }}
+          />
+        </div>
+      )}
+
+      {stage === "overview" && !viewQ && !practiceQ && (
         <div className="card">
           <h2 className="q-text">Unit {unitIdx + 1} questions</h2>
           <p className="step-label">
@@ -125,6 +150,12 @@ export function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone
                   {isDone && <span className="q-overview-check">✓</span>}
                   <button className="ghost small" onClick={() => setViewQ(q)}>
                     View
+                  </button>
+                  <button
+                    className="ghost small"
+                    onClick={() => setPracticeQ(q)}
+                  >
+                    Practice
                   </button>
                 </li>
               );
