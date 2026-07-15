@@ -35,3 +35,9 @@ export function speak(text) {
     window.speechSynthesis.speak(u);
   } catch (e) {}
 }
+
+export function stopSpeaking() {
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {}
+}

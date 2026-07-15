@@ -4,7 +4,7 @@ import "./CivicsCoach.css";
 import { Q } from "./data/questions";
 import { UNITS } from "./lib/units";
 import { shuffle } from "./lib/shuffle";
-import { speak } from "./lib/speech";
+import { speak, stopSpeaking } from "./lib/speech";
 import { useMic } from "./hooks/useMic";
 import { auth, firebaseReady } from "./lib/firebase";
 import { loadProgress, saveProgress } from "./lib/storage";
@@ -30,6 +30,25 @@ export default function CivicsCoach() {
   const [practiceQs, setPracticeQs] = useState([]);
   const [practiceRes, setPracticeRes] = useState(null);
   const [loaded, setLoaded] = useState(false);
+
+  // Stop any in-progress speech the instant the user navigates away from a
+  // screen, or leaves/hides the tab entirely — otherwise a question/answer
+  // keeps talking after the page it belongs to is gone.
+  useEffect(() => {
+    return () => stopSpeaking();
+  }, [screen]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.hidden) stopSpeaking();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", stopSpeaking);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", stopSpeaking);
+    };
+  }, []);
 
   useEffect(() => {
     if (!firebaseReady) {

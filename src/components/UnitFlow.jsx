@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { UNITS } from "../lib/units";
 import { shuffle } from "../lib/shuffle";
+import { stopSpeaking } from "../lib/speech";
 import { LearnCard } from "./LearnCard";
 import { Quiz } from "./Quiz";
 import { QuestionView } from "./QuestionView";
@@ -15,6 +16,13 @@ export function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone
   const [viewQ, setViewQ] = useState(null); // question being viewed read-only
   const [practiceQ, setPracticeQ] = useState(null); // question being drilled standalone
   const [quizQs, setQuizQs] = useState(all); // questions in the active quiz attempt
+
+  // Cancel any speech from the view being left before the next one mounts
+  // (the cleanup runs before the new stage's effects, so it never clips the
+  // new view's own speak() call).
+  useEffect(() => {
+    return () => stopSpeaking();
+  }, [stage, viewQ, practiceQ]);
 
   const firstIncompleteIdx = all.findIndex(
     (q) => !completedQs.includes(q.n),
