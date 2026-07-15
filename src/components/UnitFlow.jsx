@@ -129,10 +129,7 @@ export function UnitFlow({ unitIdx, mic, completedQs, onComplete, onQuestionDone
             key={practiceQ.n}
             q={practiceQ}
             mic={mic}
-            onMastered={() => {
-              onQuestionDone(practiceQ);
-              setPracticeQ(null);
-            }}
+            onMastered={() => setPracticeQ(null)}
           />
         </div>
       )}
